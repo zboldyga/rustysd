@@ -112,11 +112,11 @@ fn prepare_runtimeinfo(conf: &config::Config, dry_run: bool) -> Arc<units::Runti
     // initial loading of the units and matching of the various before/after settings
     // also opening all fildescriptors in the socket files
     let mut first_id = 0;
-    let mut unit_table = units::load_all_units(&conf.unit_dirs, &mut first_id).unwrap();
+    let unit_table =
+        units::load_all_units(&conf.unit_dirs, &mut first_id, &conf.target_unit).unwrap();
     trace!("Finished loading units");
     first_id = first_id + 1;
-    units::prune_units(&conf.target_unit, &mut unit_table).unwrap();
-    trace!("Finished pruning units");
+
     if let Err(e) = units::sanity_check_dependencies(&unit_table) {
         match e {
             units::SanityCheckError::CirclesFound(circles) => {
@@ -205,6 +205,8 @@ fn start_signal_handler_thread(
 struct CliArgs {
     conf_path: Option<std::path::PathBuf>,
     dry_run: bool,
+    show_help: bool,
+    unknown_arg: Option<String>
 }
 
 fn parse_args() -> CliArgs {
@@ -236,8 +238,13 @@ fn parse_args() -> CliArgs {
                 cli_args.dry_run = true;
                 idx += 1;
             }
+            "-h" | "--help" => {
+                cli_args.show_help = true;
+                idx += 1;
+            }
             unknown => {
-                unrecoverable_error(format!("Unknown cli arg: {}", unknown));
+                cli_args.unknown_arg = Some(unknown.to_string());
+                break;
             }
         }
     }
@@ -248,6 +255,14 @@ fn main() {
     pid1_specific_setup();
 
     let cli_args = parse_args();
+
+    let usage = "Usage: rustysd [-c | --config PATH] [-d | --dry-run] [-h | --help]";
+    if cli_args.show_help {
+        println!("{}", usage);
+        std::process::exit(0);
+    } else if let Some(unknown) = cli_args.unknown_arg {
+        unrecoverable_error(format!("{}\n\nUnknown cli arg: {}", usage, unknown));
+    }
 
     let (log_conf, conf) = config::load_config(&cli_args.conf_path);
 
